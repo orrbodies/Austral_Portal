@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Austral Resources — Rocklands Drillhole Database</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="core-strip" aria-hidden="true"></div>
+    <img src="AR_logo.png" alt="Austral Resources" class="login-logo" onerror="this.remove()">
+    <h1 class="login-title">Austral Resources</h1>
+    <p class="login-sub">Rocklands Drillhole Database</p>
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" autocomplete="username" required>
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" required>
+      <button type="submit" id="login-btn">Sign in</button>
+      <p id="login-error" class="login-error" role="alert"></p>
+    </form>
+    <p class="orr-credit"><img src="orr_logo.png" alt="" class="orr-logo" onerror="this.remove()">Database by Orr &amp; Associates</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="app hidden">
+  <header class="topbar">
+    <div class="brand">
+      <img src="AR_logo_white.png" alt="Austral Resources" class="brand-logo" onerror="this.remove()">
+      <span class="brand-name">Austral Resources</span>
+      <span class="brand-sub">Rocklands Drillhole Database</span>
+    </div>
+    <nav class="views" role="tablist">
+      <button class="view-tab active" data-view="map" role="tab">Map</button>
+      <button class="view-tab" data-view="data" role="tab">Data</button>
+    </nav>
+    <div class="user-area">
+      <span id="user-email" class="user-email"></span>
+      <button id="logout-btn" class="ghost-btn">Sign out</button>
+    </div>
+  </header>
+  <div class="core-strip" aria-hidden="true"></div>
+
+  <!-- ---------- MAP VIEW ---------- -->
+  <main id="view-map" class="view active">
+    <aside class="map-panel">
+      <h2>Colour holes by</h2>
+      <div class="filter-group">
+        <select id="colour-mode" aria-label="Colour holes by">
+          <option value="source">Data source</option>
+          <option value="max_cu_pct" selected>Max Cu (%)</option>
+          <option value="max_au_ppm">Max Au (g/t)</option>
+          <option value="max_co_ppm">Max Co (ppm)</option>
+        </select>
+        <div id="grade-legend" class="grade-legend hidden"></div>
+      </div>
+
+      <h2>Layers</h2>
+      <div class="filter-group">
+        <span class="filter-label">Data source</span>
+        <label class="chk"><input type="checkbox" class="f-source" value="Austral" checked><span class="swatch sw-austral"></span>Austral drilling (2026+)</label>
+        <label class="chk"><input type="checkbox" class="f-source" value="Historical" checked><span class="swatch sw-hist"></span>Historical (CuDeco era)</label>
+        <label class="chk"><input type="checkbox" id="f-blast"><span class="swatch sw-blast"></span>Blast holes (grade control, ~56k)</label>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="f-holetype">Hole type</label>
+        <select id="f-holetype"><option value="">All types</option></select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Overlays</span>
+        <label class="chk"><input type="checkbox" id="f-tenements" checked>Tenement boundaries</label>
+        <label class="chk"><input type="checkbox" id="f-prospects" checked>Prospect names</label>
+        <label class="chk"><input type="checkbox" id="f-labels" checked>Hole labels when zoomed in</label>
+        <label class="chk"><input type="checkbox" id="f-planned-only">Planned coordinates only</label>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Basemap</span>
+        <label class="chk"><input type="radio" name="basemap" value="satellite" checked>Satellite</label>
+        <label class="chk"><input type="radio" name="basemap" value="street">Street</label>
+      </div>
+      <p class="map-count" id="map-count">Loading holes&hellip;</p>
+
+      <div id="selection-box" class="selection-box hidden">
+        <h2>Selection</h2>
+        <p class="map-count"><span id="sel-count">0</span> holes in drawn area</p>
+        <label class="chk"><input type="checkbox" id="sel-related" checked>Include all related data</label>
+        <button id="sel-export" class="solid-btn">Download selection</button>
+        <button id="sel-clear" class="outline-btn">Clear selection</button>
+      </div>
+
+      <p class="legend-note">Draw a region with the tools on the map (top-left) to select holes. Dashed marker outline = planned position, not yet surveyed.</p>
+    </aside>
+    <div id="map" class="map"></div>
+  </main>
+
+  <!-- ---------- DATA VIEW ---------- -->
+  <main id="view-data" class="view">
+    <aside class="data-panel">
+      <h2>Dataset</h2>
+      <select id="table-select" aria-label="Dataset">
+        <option value="collars">Collars</option>
+        <option value="samples_assays">Samples &amp; Assays</option>
+        <option value="assay_results_by_method">Assays by Method</option>
+        <option value="pxrf_readings">pXRF Readings</option>
+        <option value="lithology_austral">Lithology — Austral</option>
+        <option value="lithology_historical">Lithology — Historical</option>
+        <option value="alteration">Alteration</option>
+        <option value="veins">Veins</option>
+        <option value="mineralisation">Mineralisation</option>
+        <option value="structure">Structure</option>
+        <option value="survey">Downhole Surveys</option>
+        <option value="drilling_details">Drilling Details</option>
+        <option value="rqd">Geotech / Core Recovery</option>
+        <option value="sg">Specific Gravity</option>
+        <option value="mag_sus">Magnetic Susceptibility</option>
+        <option value="lab_batches">Lab Batches</option>
+        <option value="tenements">Tenements</option>
+      </select>
+
+      <h2>Filters</h2>
+      <div class="filter-group" id="fg-prospect">
+        <label class="filter-label" for="d-prospect">Prospect</label>
+        <select id="d-prospect"><option value="">All prospects</option></select>
+      </div>
+      <div class="filter-group" id="fg-tenement">
+        <label class="filter-label" for="d-tenement">Tenement</label>
+        <select id="d-tenement"><option value="">All tenements</option></select>
+      </div>
+      <div class="filter-group" id="fg-source">
+        <label class="filter-label" for="d-source">Data source</label>
+        <select id="d-source"><option value="">All</option><option>Austral</option><option>Historical</option></select>
+      </div>
+      <div class="filter-group" id="fg-holetype">
+        <label class="filter-label" for="d-holetype">Hole type</label>
+        <select id="d-holetype"><option value="">All types</option></select>
+      </div>
+      <div class="filter-group" id="fg-hole">
+        <label class="filter-label" for="d-hole">Hole ID contains</label>
+        <input id="d-hole" type="text" placeholder="e.g. 26DO or LMRC" spellcheck="false">
+      </div>
+      <div class="filter-group" id="fg-year">
+        <span class="filter-label">Year drilled</span>
+        <div class="range-pair">
+          <input id="d-year-min" type="number" placeholder="from" min="1900" max="2100">
+          <input id="d-year-max" type="number" placeholder="to" min="1900" max="2100">
+        </div>
+      </div>
+      <div class="filter-group" id="fg-east">
+        <span class="filter-label">Easting (MGA2020)</span>
+        <div class="range-pair">
+          <input id="d-east-min" type="number" placeholder="min">
+          <input id="d-east-max" type="number" placeholder="max">
+        </div>
+      </div>
+      <div class="filter-group" id="fg-north">
+        <span class="filter-label">Northing (MGA2020)</span>
+        <div class="range-pair">
+          <input id="d-north-min" type="number" placeholder="min">
+          <input id="d-north-max" type="number" placeholder="max">
+        </div>
+      </div>
+      <div class="filter-group" id="fg-priority">
+        <label class="filter-label" for="d-priority">Sample priority</label>
+        <select id="d-priority">
+          <option value="">All samples</option>
+          <option value="1">1 — Primary</option>
+          <option value="2">2 — QAQC standards/blanks</option>
+          <option value="3">3 — QAQC duplicates</option>
+        </select>
+      </div>
+      <button id="apply-btn" class="solid-btn">Apply filters</button>
+      <label class="chk export-related"><input type="checkbox" id="export-related">Include all related data</label>
+      <button id="export-btn" class="outline-btn">Download CSV</button>
+      <p class="export-note" id="export-note"></p>
+    </aside>
+
+    <section class="data-main">
+      <div class="data-status">
+        <span id="row-count">—</span>
+        <div class="pager">
+          <button id="prev-btn" class="ghost-btn" disabled>&larr; Prev</button>
+          <span id="page-label">Page 1</span>
+          <button id="next-btn" class="ghost-btn" disabled>Next &rarr;</button>
+        </div>
+      </div>
+      <div class="table-wrap" id="table-wrap" tabindex="0">
+        <table id="data-table"><thead></thead><tbody></tbody></table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div><p id="loading-text">Working&hellip;</p></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

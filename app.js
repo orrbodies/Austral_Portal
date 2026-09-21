@@ -7,7 +7,7 @@ const $ = (id) => document.getElementById(id);
 const PAGE_SIZE = 100;
 const FETCH_CHUNK = 1000;
 const ID_CHUNK = 150; // hole_ids per .in() query, keeps URLs safely short
-const SOURCE_COLORS = { "Austral": "#E07020", "Historical": "#3d6480" };
+const SOURCE_COLORS = { "Austral": "#E07020", "Historical": "#3d6480", "datashed": "#7b5ea7" };
 const LABEL_ZOOM = 13; // show hole labels at this zoom and closer
 
 /* Grade colour ramps - EDIT RANGES/COLOURS HERE.

@@ -562,13 +562,20 @@ async function exportHoleBundle(holeIds, includeRelated, label) {
     const zip = new JSZip();
     zip.file("collars.csv", toCSV(collars));
     let capturedSamples = [], capturedAssayResults = [];
+    const EXPORT_PAGE = 1000;
     for (const table of RELATED_TABLES) {
       showLoading(`Exporting ${table.replaceAll("_", " ")}\u2026`);
       let rows = [];
       for (const ids of chunk(holeIds, ID_CHUNK)) {
-        const { data, error } = await sb.from(table).select("*").in("hole_id", ids);
-        if (error) throw error;
-        rows = rows.concat(data);
+        let offset = 0;
+        while (true) {
+          const { data, error } = await sb.from(table).select("*")
+            .in("hole_id", ids).range(offset, offset + EXPORT_PAGE - 1);
+          if (error) throw error;
+          rows = rows.concat(data);
+          if (data.length < EXPORT_PAGE) break;
+          offset += EXPORT_PAGE;
+        }
       }
       if (rows.length) zip.file(`${table}.csv`, toCSV(rows));
       if (table === "samples_assays") capturedSamples = rows;

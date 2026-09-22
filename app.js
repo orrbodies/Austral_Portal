@@ -115,6 +115,67 @@ function downloadBlob(blob, filename) {
 }
 const dateStamp = () => new Date().toISOString().slice(0, 10);
 
+/* Build a wide-format assay CSV from samples_assays (intervals) +
+   assay_results_by_method (long-format chemistry).
+   Output: HoleID, From, To, SampleID, [element columns...]
+   Suitable for direct import into Micromine / Leapfrog / GIS. */
+function pivotAssays(samplesRows, assayRows) {
+  // Map sample_id -> interval info
+  const intervals = new Map();
+  for (const r of samplesRows) {
+    intervals.set(r.sample_id, { hole_id: r.hole_id, from_m: r.from_m, to_m: r.to_m });
+  }
+
+  // Group assay results by sample_id, element -> value (first/best result wins)
+  const bySample = new Map();
+  const elementsOrdered = [];
+  const elementsSet = new Set();
+  // Preferred column order for geology/mining software
+  const ELEM_PREF = ["Au","Ag","Cu","Pb","Zn","As","Mo","Co","Ni","Bi","Sb",
+                     "Fe","S","Al","Ca","K","Mg","Mn","Na","Ti","P","Sc","V",
+                     "Ba","Be","Cd","Cr","Ga","Hg","La","Sr","Th","Tl","U","W"];
+
+  for (const r of assayRows) {
+    if (r.element === "WtSamp") continue;
+    if (!bySample.has(r.sample_id)) bySample.set(r.sample_id, {});
+    const elems = bySample.get(r.sample_id);
+    // is_best wins; otherwise first-seen wins
+    if (!(r.element in elems) || r.is_best) {
+      elems[r.element] = r.value;
+    }
+    if (!elementsSet.has(r.element)) {
+      elementsSet.add(r.element);
+    }
+  }
+
+  // Build ordered element list: preferred order first, then remainder alphabetically
+  const elemCols = ELEM_PREF.filter(e => elementsSet.has(e));
+  for (const e of [...elementsSet].sort()) {
+    if (!elemCols.includes(e)) elemCols.push(e);
+  }
+
+  if (!intervals.size) return "";
+
+  // Build output rows sorted by HoleID then From depth
+  const outRows = [];
+  const header = ["HoleID", "From", "To", "SampleID", ...elemCols];
+  outRows.push(header.join(","));
+
+  const sorted = [...intervals.entries()].sort((a, b) => {
+    const ha = a[1].hole_id || "", hb = b[1].hole_id || "";
+    if (ha !== hb) return ha.localeCompare(hb);
+    return (parseFloat(a[1].from_m) || 0) - (parseFloat(b[1].from_m) || 0);
+  });
+
+  for (const [sid, iv] of sorted) {
+    const elems = bySample.get(sid) || {};
+    const row = [iv.hole_id, iv.from_m, iv.to_m, sid,
+                 ...elemCols.map(e => e in elems ? elems[e] : "")];
+    outRows.push(row.map(v => csvEsc(v)).join(","));
+  }
+  return outRows.join("\n");
+}
+
 /* ================= MAP ================= */
 
 let map = null, holeLayer = null, tenementLayer = null, prospectLayer = null, drawLayer = null, basemaps = {};
@@ -500,6 +561,7 @@ async function exportHoleBundle(holeIds, includeRelated, label) {
     }
     const zip = new JSZip();
     zip.file("collars.csv", toCSV(collars));
+    let capturedSamples = [], capturedAssayResults = [];
     for (const table of RELATED_TABLES) {
       showLoading(`Exporting ${table.replaceAll("_", " ")}\u2026`);
       let rows = [];
@@ -509,7 +571,13 @@ async function exportHoleBundle(holeIds, includeRelated, label) {
         rows = rows.concat(data);
       }
       if (rows.length) zip.file(`${table}.csv`, toCSV(rows));
+      if (table === "samples_assays") capturedSamples = rows;
+      if (table === "assay_results_by_method") capturedAssayResults = rows;
     }
+    // Add wide-format assay table ready for Micromine / Leapfrog / GIS
+    showLoading("Building assays wide format\u2026");
+    const wideCSV = pivotAssays(capturedSamples, capturedAssayResults);
+    if (wideCSV) zip.file("assays_wide.csv", wideCSV);
     showLoading("Building zip\u2026");
     const blob = await zip.generateAsync({ type: "blob" });
     downloadBlob(blob, `austral_${label}_${dateStamp()}.zip`);
